@@ -9,38 +9,42 @@ import WidgetKit
 import SwiftUI
 
 struct Provider: TimelineProvider {
-    func placeholder(in context: Context) -> SimpleEntry {
-        SimpleEntry(date: Date(), emoji: "😀")
+    func placeholder(in context: Context) -> GitUserEntry {
+        GitUserEntry(date: Date(), user: .mock)
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (SimpleEntry) -> ()) {
-        let entry = SimpleEntry(date: Date(), emoji: "😀")
+    func getSnapshot(in context: Context, completion: @escaping (GitUserEntry) -> ()) {
+        let entry = GitUserEntry(date: Date(), user: .mock)
         completion(entry)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> ()) {
-        var entries: [SimpleEntry] = []
-
-        // Generate a timeline consisting of five entries an hour apart, starting from the current date.
-        let currentDate = Date()
-        for hourOffset in 0 ..< 5 {
-            let entryDate = Calendar.current.date(byAdding: .hour, value: hourOffset, to: currentDate)!
-            let entry = SimpleEntry(date: entryDate, emoji: "😀")
-            entries.append(entry)
+        Task {
+            let nextUpdate = Date().addingTimeInterval(43200) // 12 hours in seconds.
+            
+            do {
+                let user = try await NetworkManager.shared.getUser(urlString: UserURL.myUser)
+                let entry = GitUserEntry(date: .now, user: user)
+                let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+                completion(timeline)
+            } catch {
+                print("Error - \(error.localizedDescription)")
+            }
         }
-
-        let timeline = Timeline(entries: entries, policy: .atEnd)
-        completion(timeline)
     }
 }
 
-struct SimpleEntry: TimelineEntry {
+struct GitUserEntry: TimelineEntry {
     let date: Date
-    let emoji: String
+    let user: GitUser
 }
 
 struct RepoWatcherWidgetEntryView : View {
     var entry: Provider.Entry
+    let formatter = ISO8601DateFormatter()
+    var daysSinceLastPush: Int {
+        calculateLastPush(dateString: entry.user.updated_at)
+    }
 
     var body: some View {
         HStack {
@@ -49,7 +53,7 @@ struct RepoWatcherWidgetEntryView : View {
                     Circle()
                         .frame(width: 50, height: 50)
                     
-                    Text("Repo name")
+                    Text(entry.user.name)
                         .font(.title2)
                         .fontWeight(.semibold)
                         .minimumScaleFactor(0.6)
@@ -57,38 +61,18 @@ struct RepoWatcherWidgetEntryView : View {
                 }
                 .padding(.bottom, 6)
                 
+                Text("Last Pushed: \(daysSinceLastPush) days ago.")
+                    .font(.caption)
+                    .padding(.bottom, 6)
+                
                 HStack {
                     Label(
                         title: {
-                            Text("999")
+                            Text("\(entry.user.followers)")
                                 .font(.footnote)
                         },
                         icon: {
-                            Image(systemName: "star.fill")
-                                .foregroundColor(.green)
-                        }
-                    )
-                    .fontWeight(.medium)
-                    
-                    Label(
-                        title: {
-                            Text("999")
-                                .font(.footnote)
-                        },
-                        icon: {
-                            Image(systemName: "tuningfork")
-                                .foregroundColor(.green)
-                        }
-                    )
-                    .fontWeight(.medium)
-                    
-                    Label(
-                        title: {
-                            Text("999")
-                                .font(.footnote)
-                        },
-                        icon: {
-                            Image(systemName: "exclamationmark.triangle.fill")
+                            Image(systemName: "person.3.fill")
                                 .foregroundColor(.green)
                         }
                     )
@@ -99,19 +83,25 @@ struct RepoWatcherWidgetEntryView : View {
             Spacer()
             
             VStack {
-                Text("99")
+                Text("\(entry.user.public_repos)")
                     .font(.system(size: 70))
                     .frame(width: 90)
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
                     .bold()
                 
-                Text("days ago")
+                Text("public repositories")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
         .padding(4)
+    }
+    
+    func calculateLastPush(dateString: String) -> Int {
+        let lastPushDate = formatter.date(from: dateString) ?? .now
+        let daysSinceLastPush = Calendar.current.dateComponents([.day], from: lastPushDate, to: .now).day ?? 0
+        return daysSinceLastPush
     }
 }
 
@@ -138,5 +128,5 @@ struct RepoWatcherWidget: Widget {
 #Preview(as: .systemMedium) {
     RepoWatcherWidget()
 } timeline: {
-    SimpleEntry(date: .now, emoji: "😀")
+    GitUserEntry(date: .now, user: .mock)
 }
